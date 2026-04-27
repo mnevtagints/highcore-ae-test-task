@@ -14,7 +14,7 @@
 
 ## Как запустить
 
-
+```
 python -m venv .venv
 .venv\Scripts\activate
 
@@ -25,8 +25,7 @@ python scripts/prepare_data.py
 dbt deps
 dbt build
 dbt test
-
-
+```
 ---
 
 ## Особенности данных
