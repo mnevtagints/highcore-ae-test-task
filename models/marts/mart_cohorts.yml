@@ -1,0 +1,68 @@
+version: 2
+
+models:
+  - name: mart_cohorts
+    description: Final cohort mart for dashboard. Contains retention and monetization metrics by cohort date and day number.
+
+    columns:
+      - name: cohort_date
+        description: Date of user's first observed event.
+        tests:
+          - not_null
+
+      - name: day_number
+        description: Number of days since cohort date.
+        tests:
+          - not_null
+
+      - name: cohort_users
+        description: Number of users in the cohort.
+        tests:
+          - not_null
+
+      - name: retained_users
+        description: Number of users active on this cohort day.
+        tests:
+          - not_null
+
+      - name: retention_rate
+        description: retained_users / cohort_users.
+        tests:
+          - not_null
+
+      - name: paying_users
+        description: Number of users with positive revenue on this cohort day.
+        tests:
+          - not_null
+
+      - name: revenue
+        description: Revenue in USD on this cohort day.
+        tests:
+          - not_null
+
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - cohort_date
+            - day_number
+
+      - dbt_utils.expression_is_true:
+          expression: "day_number between 0 and 30"
+
+      - dbt_utils.expression_is_true:
+          expression: "cohort_users > 0"
+
+      - dbt_utils.expression_is_true:
+          expression: "retained_users >= 0"
+
+      - dbt_utils.expression_is_true:
+          expression: "retained_users <= cohort_users"
+
+      - dbt_utils.expression_is_true:
+          expression: "retention_rate >= 0 and retention_rate <= 1"
+
+      - dbt_utils.expression_is_true:
+          expression: "paying_users >= 0"
+
+      - dbt_utils.expression_is_true:
+          expression: "revenue >= 0"

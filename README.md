@@ -1,95 +1,133 @@
-# Analytics Engineer - тестовое задание
+# Тестовое задание - Analytics Engineer (Highcore)
 
-Стартовый репозиторий для тестового задания Analytics Engineer в Highcore.
+## Коротко о задаче
 
-## Задание
+Работа с сырыми событиями мобильной игры (Firebase).  
+Цель - собрать витрины для анализа:
 
-Детали в [TEST_ASSIGNMENT.md](TEST_ASSIGNMENT.md).
+- retention новых пользователей
+- монетизация по когортам
 
-## Требования
+Стек: dbt + DuckDB
 
-- Python 3.11+
-- make
-- ~2 GB свободного места на диске
+---
 
-## Установка
+## Как запустить
 
-1. Клонируй репозиторий:
 
-```bash
-git clone https://github.com/gerasuchkov/highcore-ae-test-task.git
-cd highcore-ae-test-task
-```
+python -m venv .venv
+.venv\Scripts\activate
 
-2. Создай и активируй виртуальное окружение (Python 3.11+):
+pip install -r requirements.txt
 
-```bash
-python3.11 -m venv .venv
-# или python3.12, python3.13 - любая версия 3.11+
-source .venv/bin/activate
-```
+python scripts/prepare_data.py
 
-Проверь версию: `python3 --version`. Если `python3` указывает на 3.9 или 3.10, используй явную версию (например `python3.13 -m venv .venv`).
+dbt deps
+dbt build
+dbt test
 
-3. Установи зависимости и скачай данные:
 
-```bash
-make setup
-```
+---
 
-Будут установлены Python-пакеты и скачаны ~500 MB данных с Google Drive.
-Первый запуск может занять несколько минут в зависимости от скорости интернета.
+## Особенности данных
 
-Если автоматическое скачивание не сработало, скачай файл вручную и положи в `data/`:
-```bash
-# Прямая ссылка: https://drive.google.com/file/d/1FTZONE_YydmmewPA3wfysVw8MuUTZe7h/view
-# Сохрани как: data/firebase_events.parquet
-# Затем повторно запусти:
-make setup
-```
+- данные событийные (1 строка = 1 событие)
+- основной user id - `user_pseudo_id`
+- параметры лежат в `event_params` (nested структура)
 
-4. Проверь, что все работает:
+Чтобы с ними работать:
+- использовал UNNEST
+- привел значения к одному типу
 
-```bash
-make build
-```
+---
 
-Должна пройти компиляция и запуск примера staging-модели без ошибок.
+## Архитектура
 
-5. (Опционально) dbt docs:
+Разбил модели на слои.
 
-```bash
-make docs
-```
+### staging
 
-Сгенерирует и откроет документацию dbt на http://localhost:8080.
+**stg_events**
+- распаковывает event_params
+- приводит timestamp
+- результат — “длинный” формат (event + param)
 
-## Что внутри
+---
 
-- **DuckDB** - локальная замена BigQuery. SQL-диалект близок, включая работу с nested/struct-полями.
-- **dbt-duckdb** - dbt-проект над которым мы будет работать.
-- **Данные** - события из мобильной F2P игры (публичный датасет Firebase "firebase-public-project.analytics_153293282").
+### intermediate
 
-## Структура репозитория
+**int_events_pivot**
+- переводит данные в “широкий” формат
+- оставил только нужные поля (board, screen и т.д.)
 
-```
-.
-├── README.md                 # этот файл
-├── TEST_ASSIGNMENT.md        # само задание - начни отсюда
-├── Makefile                  # setup / build / docs / clean
-├── requirements.txt          # зафиксированные зависимости
-├── profiles.yml              # dbt-профиль для DuckDB (локальный)
-├── dbt_project.yml           # конфигурация dbt-проекта
-├── scripts/
-│   └── prepare_data.py       # скачивает данные и загружает в DuckDB
-├── data/                     # БД DuckDB и parquet (в gitignore)
-├── models/
-│   ├── staging/              # staging-модели (views) - пример внутри
-│   ├── intermediate/         # intermediate-модели (views)
-│   └── marts/                # mart-модели (tables)
-├── macros/                   # dbt-макросы
-├── tests/                    # кастомные dbt-тесты
-├── docs/                     # для документации
-└── skills/                   # для скиллов
-```
+**int_users_first_seen**
+- дата первого события пользователя
+- считается напрямую от raw (без pivot)
 
+---
+
+### marts
+
+**mart_retention**
+- retention по когортам
+- считаю факт возврата пользователя в день
+
+**mart_monetization**
+- revenue и paying users
+- использую `event_value_in_usd`
+
+**mart_cohorts**
+- финальная витрина
+- объединяет retention + revenue
+- готова для BI
+
+---
+
+## Допущения
+
+- user = `user_pseudo_id`
+- retention считаю по активности в день
+- анализ ограничен 30 днями
+
+### Монетизация
+
+В данных мало событий с revenue.
+
+Из-за этого:
+- почти все значения = 0
+- метрика есть, но разреженная
+
+В реальном проекте уточнил бы:
+- какие события = покупки
+- где лежит price / currency
+
+---
+
+## Тесты
+
+Добавлены:
+
+- not null
+- уникальность (cohort_date + day_number)
+
+Бизнес-проверки:
+
+- retention от 0 до 1
+- retained_users ≤ cohort_users
+- revenue ≥ 0
+- day_number от 0 до 30
+
+---
+
+## Дашборд
+
+Из `mart_cohorts` можно построить:
+
+- retention (D0–D30)
+- revenue по когортам
+- paying users
+
+Фильтр:
+- cohort_date
+
+---

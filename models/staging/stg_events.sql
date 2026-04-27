@@ -1,31 +1,28 @@
 with source as (
-    select * from {{ source('raw', 'events') }}
+
+    select * from raw.events
+
 ),
 
-base as (
+unnested as (
+
     select
-        event_date,
-        -- event_timestamp is in microseconds since epoch
-        make_timestamp(event_timestamp) as event_timestamp,
+        user_pseudo_id as user_id,
         event_name,
-        user_pseudo_id,
-        user_id,
-        platform,
+        timestamp 'epoch' + event_timestamp / 1000000 * interval '1 second' as event_time,
 
-       
-        (list_filter(event_params, x -> x.key = 'ga_session_id')[1]).value.int_value as ga_session_id,
-        (list_filter(event_params, x -> x.key = 'engagement_time_msec')[1]).value.int_value as engagement_time_msec,
-        (list_filter(event_params, x -> x.key = 'firebase_screen_class')[1]).value.string_value as screen_class,
+        ep.param.key as param_key,
 
-        
-        event_params,
-        user_properties,
-        device,
-        geo,
-        app_info,
-        traffic_source
+        coalesce(
+            ep.param.value.string_value,
+            cast(ep.param.value.int_value as varchar),
+            cast(ep.param.value.float_value as varchar),
+            cast(ep.param.value.double_value as varchar)
+        ) as param_value
 
     from source
+    cross join unnest(event_params) as ep(param)
+
 )
 
-select * from base
+select * from unnested
